@@ -1,0 +1,459 @@
+// AI Compta — Prisma schema
+// SYSCOHADA Révisé — Immutabilité comptable (jamais de DELETE métier)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// Enums
+// =====================================================
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  EXTRACTED
+  NEEDS_REVIEW
+  VALIDATED
+  POSTED
+  REJECTED
+  CANCELLED
+}
+
+enum DocumentType {
+  PURCHASE_INVOICE
+  SALES_INVOICE
+  RECEIPT
+  EXPENSE_NOTE
+  BANK_STATEMENT
+  CREDIT_NOTE
+}
+
+enum UserRole {
+  OWNER
+  ACCOUNTANT
+  VIEWER
+}
+
+enum JournalType {
+  PURCHASE
+  SALES
+  BANK
+  MISC
+}
+
+enum LineType {
+  DEBIT
+  CREDIT
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum ChatRole {
+  user
+  assistant
+  tool
+}
+
+// =====================================================
+// Multi-tenant core
+// =====================================================
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships       Membership[]
+  fiscalYears       FiscalYear[]
+  chartOfAccounts   ChartOfAccount[]
+  suppliers         Supplier[]
+  customers         Customer[]
+  analyticAxes      AnalyticAxis[]
+  analyticValues    AnalyticValue[]
+  analyticAllocations AnalyticAllocation[]
+  documents         Document[]
+  extractionAttempts ExtractionAttempt[]
+  journalEntries    JournalEntry[]
+  journalLines      JournalLine[]
+  chatThreads       ChatThread[]
+  chatMessages      ChatMessage[]
+  auditLogs         AuditLog[]
+  invitations       Invitation[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String?
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships    Membership[]
+  sessions       Session[]
+  chatThreads    ChatThread[]
+  magicLinks     MagicLink[]
+  auditLogs      AuditLog[]
+  journalEntries JournalEntry[]
+}
+
+model Membership {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  role           UserRole
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MagicLink {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+model Invitation {
+  id             String   @id @default(uuid())
+  organizationId String
+  email          String
+  role           UserRole
+  token          String   @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+}
+
+// =====================================================
+// Configuration comptable
+// =====================================================
+
+model FiscalYear {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  isClosed       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journalEntries JournalEntry[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model ChartOfAccount {
+  id             String      @id @default(uuid())
+  organizationId String
+  code           String
+  label          String
+  type           AccountType
+  parentCode     String?
+  isSystem       Boolean     @default(false)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, parentCode])
+}
+
+model Supplier {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  taxId          String?
+  email          String?
+  phone          String?
+  address        String?
+  createdAt      DateTime @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  journalLines JournalLine[]
+
+  @@index([organizationId, name])
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  taxId          String?
+  email          String?
+  phone          String?
+  address        String?
+  createdAt      DateTime @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  journalLines JournalLine[]
+
+  @@index([organizationId, name])
+}
+
+model AnalyticAxis {
+  id             String  @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values       AnalyticValue[]
+
+  @@unique([organizationId, name])
+}
+
+model AnalyticValue {
+  id             String @id @default(uuid())
+  analyticAxisId String
+  organizationId String
+  label          String
+
+  axis         AnalyticAxis         @relation(fields: [analyticAxisId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  allocations  AnalyticAllocation[]
+
+  @@unique([analyticAxisId, label])
+  @@index([organizationId])
+}
+
+// =====================================================
+// Documents et extraction
+// =====================================================
+
+model Document {
+  id              String         @id @default(uuid())
+  organizationId  String
+  status          DocumentStatus @default(PENDING)
+  type            DocumentType?
+  fileName        String
+  mimeType        String
+  fileSizeBytes   Int
+  fileHash        String
+  fileUrl         String
+  extractedData   Json?
+  confidence      Decimal?       @db.Decimal(20, 4)
+  invoiceNumber   String?
+  invoiceDate     DateTime?
+  supplierId      String?
+  customerId      String?
+  totalHT         Decimal?       @db.Decimal(20, 4)
+  totalTVA        Decimal?       @db.Decimal(20, 4)
+  totalTTC        Decimal?       @db.Decimal(20, 4)
+  currency        String         @default("XOF")
+  fxRate          Decimal        @default(1) @db.Decimal(20, 6)
+  validatedById   String?
+  validatedAt     DateTime?
+  rejectedReason  String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id])
+  customer           Customer?           @relation(fields: [customerId], references: [id])
+  extractionAttempts ExtractionAttempt[]
+  journalEntries     JournalEntry[]
+
+  @@unique([organizationId, fileHash])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, invoiceNumber, supplierId])
+}
+
+model ExtractionAttempt {
+  id               String   @id @default(uuid())
+  documentId       String
+  organizationId   String
+  model            String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  costUsd          Decimal  @default(0) @db.Decimal(20, 6)
+  confidence       Decimal  @default(0) @db.Decimal(20, 4)
+  rawResponse      Json
+  success          Boolean
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// =====================================================
+// Comptabilité
+// =====================================================
+
+model JournalEntry {
+  id             String      @id @default(uuid())
+  organizationId String
+  fiscalYearId   String
+  journal        JournalType
+  date           DateTime
+  reference      String
+  description    String
+  documentId     String?
+  isReversal     Boolean     @default(false)
+  reversalOfId   String?
+  postedAt       DateTime    @default(now())
+  createdById    String
+  createdAt      DateTime    @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fiscalYear   FiscalYear    @relation(fields: [fiscalYearId], references: [id])
+  document     Document?     @relation(fields: [documentId], references: [id])
+  reversalOf   JournalEntry? @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy   JournalEntry[] @relation("Reversal")
+  createdBy    User          @relation(fields: [createdById], references: [id])
+  lines        JournalLine[]
+
+  @@index([organizationId, date])
+  @@index([organizationId, journal])
+  @@index([documentId])
+}
+
+model JournalLine {
+  id             String   @id @default(uuid())
+  journalEntryId String
+  organizationId String
+  accountCode    String
+  accountLabel   String
+  lineType       LineType
+  amount         Decimal  @db.Decimal(20, 4)
+  currency       String   @default("XOF")
+  fxRate         Decimal  @default(1) @db.Decimal(20, 6)
+  amountXof      Decimal  @db.Decimal(20, 4)
+  description    String?
+  supplierId     String?
+  customerId     String?
+
+  entry        JournalEntry         @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier?            @relation(fields: [supplierId], references: [id])
+  customer     Customer?            @relation(fields: [customerId], references: [id])
+  allocations  AnalyticAllocation[]
+
+  @@index([organizationId, accountCode])
+  @@index([journalEntryId])
+}
+
+model AnalyticAllocation {
+  id              String  @id @default(uuid())
+  journalLineId   String
+  organizationId  String
+  analyticValueId String
+  percentage      Decimal @db.Decimal(7, 4)
+  amountXof       Decimal @db.Decimal(20, 4)
+
+  line         JournalLine   @relation(fields: [journalLineId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  value        AnalyticValue @relation(fields: [analyticValueId], references: [id])
+
+  @@index([organizationId])
+  @@index([journalLineId])
+}
+
+// =====================================================
+// Copilote IA
+// =====================================================
+
+model ChatThread {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  title          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+
+  @@index([organizationId, userId, createdAt])
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  threadId       String
+  organizationId String
+  role           ChatRole
+  content        String   @db.Text
+  toolCalls      Json?
+  inputTokens    Int?
+  outputTokens   Int?
+  createdAt      DateTime @default(now())
+
+  thread       ChatThread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// =====================================================
+// Audit
+// =====================================================
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String
+  targetType     String
+  targetId       String
+  metadata       Json?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action])
+  @@index([targetType, targetId])
+}
