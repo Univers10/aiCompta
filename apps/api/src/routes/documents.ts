@@ -6,7 +6,7 @@ import { DocumentQuerySchema, ValidateDocumentSchema, RejectDocumentSchema } fro
 import { env } from '../config/env';
 import { prisma } from '../lib/db/prisma';
 import { withOrg } from '../lib/db/tenant';
-import { buildObjectKey, uploadObject, ensureBucket, getSignedDownloadUrl } from '../lib/storage';
+import { uploadFile, getFileUrl, ensureBucketExists } from '../lib/storage/minio';
 import { addExtractionJob } from '../lib/queue/connection';
 import {
   ConflictError,
@@ -33,7 +33,7 @@ const IdParam = z.object({ id: z.string().uuid() });
 
 router.post('/', requireAuth, requireRole('ACCOUNTANT'), upload.single('file'), async (req, res) => {
   const auth = req.auth!;
-  await ensureBucket();
+  await ensureBucketExists();
   const file = req.file;
   if (!file) throw new ValidationError('Fichier manquant');
   if (file.size > env.MAX_UPLOAD_BYTES) throw new PayloadTooLargeError();
@@ -50,8 +50,7 @@ router.post('/', requireAuth, requireRole('ACCOUNTANT'), upload.single('file'), 
   );
   if (duplicate) throw new ConflictError('Doublon détecté : ce fichier a déjà été importé');
 
-  const key = buildObjectKey(auth.organizationId, file.originalname);
-  await uploadObject(key, file.buffer, file.mimetype);
+  const fileUrl = await uploadFile(file.originalname, file.buffer, file.mimetype);
 
   const doc = await withOrg(auth.organizationId, (orgId) =>
     prisma.document.create({
@@ -62,7 +61,7 @@ router.post('/', requireAuth, requireRole('ACCOUNTANT'), upload.single('file'), 
         mimeType: file.mimetype,
         fileSizeBytes: file.size,
         fileHash: hash,
-        fileUrl: key,
+        fileUrl: fileUrl,
         currency: 'XOF',
         fxRate: '1',
       },
@@ -138,8 +137,8 @@ router.get('/:id', requireAuth, validateParams(IdParam), async (req, res) => {
     },
   });
   if (!doc) throw new NotFoundError('Document introuvable');
-  const fileUrl = await getSignedDownloadUrl(doc.fileUrl);
-  success(res, { ...doc, fileUrl });
+  const signedUrl = await getFileUrl(doc.fileUrl);
+  success(res, { ...doc, fileUrl: signedUrl });
 });
 
 router.post(

@@ -22,6 +22,13 @@ export const EnvSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  MINIO_ENDPOINT: z.string().default('localhost'),
+  MINIO_PORT: z.string().default('9000'),
+  MINIO_USE_SSL: z.string().default('false'),
+  MINIO_ACCESS_KEY: z.string().default('minioadmin'),
+  MINIO_SECRET_KEY: z.string().default('minioadmin'),
+  MINIO_BUCKET: z.string().default('aicompta-documents'),
+
   AUTH_SECRET: z.string().min(32, 'AUTH_SECRET doit faire au moins 32 caractères'),
   AUTH_BASE_URL: z.string().url().default('http://localhost:3001'),
 

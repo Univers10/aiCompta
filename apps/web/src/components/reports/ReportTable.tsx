@@ -22,9 +22,9 @@ export function ReportTable<T extends Record<string, unknown>>({ columns, rows, 
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-zinc-200 bg-zinc-50">
-            {columns.map((c) => (
+            {columns.map((c, idx) => (
               <th
-                key={String(c.key)}
+                key={`${String(c.key)}-${idx}`}
                 className={`px-3 py-2 font-medium text-zinc-700 ${
                   c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left'
                 }`}
@@ -37,11 +37,11 @@ export function ReportTable<T extends Record<string, unknown>>({ columns, rows, 
         <tbody>
           {rows.map((row, i) => (
             <tr key={i} className="border-b border-zinc-100 hover:bg-zinc-50">
-              {columns.map((c) => {
+              {columns.map((c, idx) => {
                 const val = row[c.key];
                 return (
                   <td
-                    key={String(c.key)}
+                    key={`${String(c.key)}-${idx}`}
                     className={`px-3 py-2 ${
                       c.align === 'right' ? 'text-right tabular-nums' : c.align === 'center' ? 'text-center' : 'text-left'
                     }`}
