@@ -36,13 +36,12 @@ export const EnvSchema = z.object({
   RESEND_INBOUND_SECRET: z.string().optional().default(''),
   RESEND_FROM: z.string().default('AI Compta <noreply@aicompta.app>'),
 
-  ANTHROPIC_API_KEY: z.string().optional().default(''),
-  ANTHROPIC_MODEL_EXTRACTION: z.string().default('claude-sonnet-4-5'),
-  ANTHROPIC_MODEL_CLASSIFIER: z.string().default('claude-haiku-4-5'),
+  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY est requise pour l\'extraction IA'),
+  ANTHROPIC_MODEL: z.string().default('claude-haiku-4-5'),
+  ANTHROPIC_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
 
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(26214400),
   AI_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
-  AI_TOKEN_BUDGET_MONTHLY: z.coerce.number().int().positive().default(1_000_000),
 
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
 });

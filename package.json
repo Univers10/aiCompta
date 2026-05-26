@@ -17,13 +17,18 @@
     "clean": "turbo run clean && rimraf node_modules"
   },
   "devDependencies": {
+    "rimraf": "^5.0.5",
     "turbo": "^2.0.0",
-    "typescript": "^5.4.5",
-    "rimraf": "^5.0.5"
+    "typescript": "^5.4.5"
   },
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=8.0.0"
   },
-  "packageManager": "npm@10.0.0"
+  "packageManager": "npm@10.0.0",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0",
+    "canvas": "^3.2.3",
+    "pdfjs-dist": "^5.7.284"
+  }
 }

@@ -148,14 +148,32 @@ export default function DocumentDetailPage() {
 
           <Card>
             <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
+              {/* Actions principales selon le statut */}
               {(doc.status === 'NEEDS_REVIEW' || doc.status === 'EXTRACTED') && (
                 <div className="flex gap-2 flex-wrap">
                   <Button onClick={validate} disabled={busy}>Valider</Button>
                   <Button variant="outline" onClick={() => setShowReject(true)}>Rejeter</Button>
-                  <Button variant="ghost" onClick={reextract}>Ré-extraire</Button>
                 </div>
               )}
+              
+              {/* Ré-extraction disponible pour tous les statuts sauf PENDING/PROCESSING */}
+              {(doc.status !== 'PENDING' && doc.status !== 'PROCESSING') && (
+                <div className={doc.status === 'NEEDS_REVIEW' || doc.status === 'EXTRACTED' ? 'pt-2 border-t' : ''}>
+                  <Button 
+                    variant="secondary" 
+                    onClick={reextract} 
+                    disabled={busy}
+                    className="w-full"
+                  >
+                    🔄 Ré-extraire avec Claude
+                  </Button>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Relance l'extraction automatique (PDF ou image)
+                  </p>
+                </div>
+              )}
+              
               {showReject && (
                 <div className="space-y-2 pt-2">
                   <Textarea
@@ -170,8 +188,8 @@ export default function DocumentDetailPage() {
                 </div>
               )}
               {doc.status === 'REJECTED' && doc.rejectedReason && (
-                <div className="text-sm text-zinc-600">
-                  <strong>Motif :</strong> {doc.rejectedReason}
+                <div className="text-sm text-zinc-600 bg-red-50 p-3 rounded border border-red-100">
+                  <strong>Motif de rejet :</strong> {doc.rejectedReason}
                 </div>
               )}
             </CardContent>

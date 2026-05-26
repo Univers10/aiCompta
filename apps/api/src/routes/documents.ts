@@ -7,7 +7,7 @@ import { env } from '../config/env';
 import { prisma } from '../lib/db/prisma';
 import { withOrg } from '../lib/db/tenant';
 import { uploadFile, getFileUrl, ensureBucketExists } from '../lib/storage/minio';
-import { addExtractionJob } from '../lib/queue/connection';
+import { processInvoice } from '../lib/workers/invoice-processor';
 import {
   ConflictError,
   NotFoundError,
@@ -68,7 +68,11 @@ router.post('/', requireAuth, requireRole('ACCOUNTANT'), upload.single('file'), 
     }),
   );
 
-  await addExtractionJob(doc.id, auth.organizationId);
+  // Lancer le traitement automatique en arrière-plan
+  processInvoice(doc.id).catch((err) => {
+    console.error(`[Upload] Failed to process invoice ${doc.id}:`, err);
+  });
+
   await audit(auth.organizationId, auth.userId, {
     action: 'document.uploaded',
     targetType: 'document',
@@ -77,7 +81,7 @@ router.post('/', requireAuth, requireRole('ACCOUNTANT'), upload.single('file'), 
     req,
   });
 
-  res.status(202).json({ data: { documentId: doc.id, status: doc.status } });
+  success(res, { id: doc.id, status: doc.status, fileName: doc.fileName }, 201);
 });
 
 router.get('/', requireAuth, validateQuery(DocumentQuerySchema), async (req, res) => {
@@ -225,14 +229,19 @@ router.post(
     });
     if (!doc) throw new NotFoundError('Document introuvable');
     await prisma.document.update({ where: { id: doc.id }, data: { status: 'PENDING' } });
-    await addExtractionJob(doc.id, auth.organizationId);
+    
+    // Relancer le traitement
+    processInvoice(doc.id).catch((err) => {
+      console.error(`[Reextract] Failed to process invoice ${doc.id}:`, err);
+    });
+    
     await audit(auth.organizationId, auth.userId, {
       action: 'document.reextracted',
       targetType: 'document',
       targetId: doc.id,
       req,
     });
-    res.status(202).json({ data: { id: doc.id, status: 'PENDING' } });
+    success(res, { id: doc.id, status: 'PENDING' });
   },
 );
 
