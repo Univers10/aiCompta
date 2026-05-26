@@ -90,9 +90,8 @@ export async function generateJournalEntries(input: GenerateJournalInput) {
       documentId,
       createdById,
       lines: {
-        create: lines.map((line, index) => ({
+        create: lines.map((line) => ({
           organizationId: organizationId,
-          lineNumber: index + 1,
           accountCode: line.accountCode,
           accountLabel: line.accountLabel,
           lineType: line.lineType,
