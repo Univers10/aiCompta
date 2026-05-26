@@ -88,12 +88,21 @@ router.get('/pnl', requireAuth, validateQuery(PnlQuerySchema), async (req, res) 
     return res.status(404).json({ error: 'Aucun exercice fiscal trouvé' });
   }
   
-  const report = await generateCompteResultat(
+  const compteResultat = await generateCompteResultat(
     auth.organizationId,
     fiscalYear.id,
     new Date(dateFrom),
     new Date(dateTo)
   );
+  
+  // Adapter pour le frontend
+  const report = {
+    ...compteResultat,
+    resultatExploitation: compteResultat.resultat,
+    chargesFinancieres: 0, // TODO: Calculer les charges financières (classe 66)
+    produitsFinanciers: 0, // TODO: Calculer les produits financiers (classe 76)
+    resultatNet: compteResultat.resultat,
+  };
   
   if (format === 'json') {
     success(res, report);
@@ -211,7 +220,7 @@ router.get(
       return res.status(404).json({ error: 'Aucun exercice fiscal trouvé' });
     }
     
-    const report = await generateGrandLivre(
+    const grandLivreData = await generateGrandLivre(
       auth.organizationId,
       fiscalYear.id,
       accountCode,
@@ -219,18 +228,48 @@ router.get(
       new Date(dateTo)
     );
     
+    // Le frontend attend un seul compte, pas un tableau
+    const accountData = grandLivreData.find(a => a.accountCode === accountCode) || grandLivreData[0];
+    
+    if (!accountData) {
+      return res.status(404).json({ error: 'Aucune donnée trouvée pour ce compte' });
+    }
+    
+    // Transformer pour le frontend
+    const report = {
+      accountCode: accountData.accountCode,
+      accountLabel: accountData.accountLabel,
+      dateFrom,
+      dateTo,
+      soldeInitial: 0, // TODO: Calculer le solde avant dateFrom
+      moves: accountData.movements.map(m => ({
+        date: m.date,
+        reference: m.reference,
+        description: m.description,
+        debit: m.debit,
+        credit: m.credit,
+        solde: m.balance,
+      })),
+      soldeFinal: accountData.finalBalance,
+      totalDebit: accountData.totalDebit,
+      totalCredit: accountData.totalCredit,
+    };
+    
     if (format === 'json') {
       success(res, report);
       return;
     }
     
-    const allMovements = report.flatMap(account => 
-      account.movements.map(m => ({
-        accountCode: account.accountCode,
-        accountLabel: account.accountLabel,
-        ...m
-      }))
-    );
+    const allMovements = report.moves.map(m => ({
+      accountCode: report.accountCode,
+      accountLabel: report.accountLabel,
+      date: m.date,
+      reference: m.reference,
+      description: m.description,
+      debit: m.debit,
+      credit: m.credit,
+      solde: m.solde,
+    }));
     
     const columns = [
       { header: 'Compte', key: 'accountCode' },
@@ -239,7 +278,7 @@ router.get(
       { header: 'Libellé', key: 'description' },
       { header: 'Débit', key: 'debit' },
       { header: 'Crédit', key: 'credit' },
-      { header: 'Solde', key: 'balance' },
+      { header: 'Solde', key: 'solde' },
     ];
     if (format === 'csv') exportCsv(res, `grand-livre-${accountCode}`, columns, allMovements);
     else await exportXlsx(res, `grand-livre-${accountCode}`, 'Grand Livre', columns, allMovements);
