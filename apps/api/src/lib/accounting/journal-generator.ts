@@ -8,6 +8,8 @@ interface JournalLineInput {
   amount: string;
   amountXof: string;
   description: string;
+  supplierId?: string | null;
+  customerId?: string | null;
 }
 
 interface GenerateJournalInput {
@@ -16,13 +18,15 @@ interface GenerateJournalInput {
   documentId: string;
   invoiceData: InvoiceData;
   createdById: string;
+  supplierId?: string | null;
+  customerId?: string | null;
 }
 
 /**
  * Génère les écritures comptables à partir des données de facture extraites
  */
 export async function generateJournalEntries(input: GenerateJournalInput) {
-  const { organizationId, fiscalYearId, documentId, invoiceData, createdById } = input;
+  const { organizationId, fiscalYearId, documentId, invoiceData, createdById, supplierId, customerId } = input;
 
   // Vérifier que les montants sont cohérents
   const totalHT = invoiceData.totalHT ?? 0;
@@ -45,30 +49,63 @@ export async function generateJournalEntries(input: GenerateJournalInput) {
   // Construire les lignes d'écriture
   const lines: JournalLineInput[] = [];
 
-  // Ligne 1: Débit du compte de charge (601 - Achats de matières premières)
-  // Note: Le compte devrait être déterminé selon la nature de l'achat
-  lines.push({
-    accountCode: '601',
-    accountLabel: 'Achats de matières premières',
-    lineType: 'DEBIT',
-    amount: totalHT.toString(),
-    amountXof: totalHT.toString(),
-    description: description,
-  });
+  // Si la facture a des lignes détaillées, les utiliser
+  if (invoiceData.items && invoiceData.items.length > 0) {
+    console.log(`[Journal Generator] Processing ${invoiceData.items.length} invoice items`);
+    
+    // Pour chaque ligne de facture : Débit du compte de charge
+    invoiceData.items.forEach((item, index) => {
+      lines.push({
+        accountCode: '601', // TODO: Déterminer le compte selon la nature
+        accountLabel: 'Achats de matières premières',
+        lineType: 'DEBIT',
+        amount: item.totalHT.toString(),
+        amountXof: item.totalHT.toString(),
+        description: `${item.description} (Qté: ${item.quantity} x ${item.unitPrice})`,
+        supplierId: supplierId, // Lier au fournisseur
+      });
 
-  // Ligne 2: Débit de la TVA déductible (4452 - TVA déductible)
-  if (totalTVA > 0) {
-    lines.push({
-      accountCode: '4452',
-      accountLabel: 'TVA déductible',
-      lineType: 'DEBIT',
-      amount: totalTVA.toString(),
-      amountXof: totalTVA.toString(),
-      description: 'TVA déductible',
+      // TVA pour cette ligne
+      if (item.tvaAmount > 0) {
+        lines.push({
+          accountCode: '4452',
+          accountLabel: 'TVA déductible',
+          lineType: 'DEBIT',
+          amount: item.tvaAmount.toString(),
+          amountXof: item.tvaAmount.toString(),
+          description: `TVA ${item.tvaRate}% - ${item.description}`,
+          supplierId: supplierId, // Lier au fournisseur
+        });
+      }
     });
+  } else {
+    // Fallback : une seule ligne agrégée
+    console.log('[Journal Generator] No items found, using aggregated amounts');
+    
+    lines.push({
+      accountCode: '601',
+      accountLabel: 'Achats de matières premières',
+      lineType: 'DEBIT',
+      amount: totalHT.toString(),
+      amountXof: totalHT.toString(),
+      description: description,
+      supplierId: supplierId, // Lier au fournisseur
+    });
+
+    if (totalTVA > 0) {
+      lines.push({
+        accountCode: '4452',
+        accountLabel: 'TVA déductible',
+        lineType: 'DEBIT',
+        amount: totalTVA.toString(),
+        amountXof: totalTVA.toString(),
+        description: 'TVA déductible',
+        supplierId: supplierId, // Lier au fournisseur
+      });
+    }
   }
 
-  // Ligne 3: Crédit du compte fournisseur (401 - Fournisseurs)
+  // Ligne de crédit : Compte fournisseur (401)
   lines.push({
     accountCode: '401',
     accountLabel: `Fournisseurs - ${invoiceData.supplierName || 'Divers'}`,
@@ -76,6 +113,7 @@ export async function generateJournalEntries(input: GenerateJournalInput) {
     amount: totalTTC.toString(),
     amountXof: totalTTC.toString(),
     description: `Facture ${reference}`,
+    supplierId: supplierId, // Lier au fournisseur
   });
 
   // Créer l'écriture comptable

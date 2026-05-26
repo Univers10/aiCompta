@@ -119,18 +119,21 @@ export async function processInvoice(documentId: string): Promise<void> {
       // Score élevé : Générer automatiquement les écritures
       console.log(`[Invoice Processor] High confidence (${invoiceData.confidence}), generating journal entries...`);
 
-      // Récupérer l'exercice fiscal actif
+      // Récupérer l'exercice fiscal correspondant à la date de la facture
+      const invoiceDate = invoiceData.invoiceDate ? new Date(invoiceData.invoiceDate) : new Date();
       const fiscalYear = await prisma.fiscalYear.findFirst({
         where: {
           organizationId: document.organizationId,
-          isClosed: false,
+          startDate: { lte: invoiceDate },
+          endDate: { gte: invoiceDate },
         },
-        orderBy: { startDate: 'desc' },
       });
 
       if (!fiscalYear) {
-        throw new Error('No active fiscal year found');
+        throw new Error(`No fiscal year found for invoice date ${invoiceDate.toISOString().split('T')[0]}`);
       }
+      
+      console.log(`[Invoice Processor] Using fiscal year: ${fiscalYear.name} (${fiscalYear.startDate.toISOString().split('T')[0]} → ${fiscalYear.endDate.toISOString().split('T')[0]})`);
 
       // Récupérer le premier utilisateur de l'organisation comme créateur
       const membership = await prisma.membership.findFirst({
@@ -149,6 +152,7 @@ export async function processInvoice(documentId: string): Promise<void> {
         documentId: document.id,
         invoiceData,
         createdById: membership.userId,
+        supplierId: supplierId,
       });
 
       console.log(`[Invoice Processor] Journal entry created: ${journalEntry.id}`);

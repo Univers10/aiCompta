@@ -5,27 +5,56 @@ import {
   BalanceSheetQuerySchema,
   GeneralLedgerQuerySchema,
 } from '@aicompta/validators';
-import { getBalance } from '../lib/accounting/reports/balance';
-import { getPnL } from '../lib/accounting/reports/pnl';
-import { getBalanceSheet } from '../lib/accounting/reports/balance-sheet';
-import { getGeneralLedger } from '../lib/accounting/reports/general-ledger';
+import { 
+  generateBalance,
+  generateGrandLivre,
+  generateCompteResultat,
+  generateBilan
+} from '../lib/accounting/reports';
 import { success } from '../lib/response';
 import { validateQuery } from '../middleware/validate';
 import { requireAuth } from '../middleware/auth';
 import { exportCsv, exportXlsx } from '../lib/export';
+import { prisma } from '../lib/db/prisma';
 
 const router = Router();
 
 router.get('/balance', requireAuth, validateQuery(BalanceQuerySchema), async (req, res) => {
   const auth = req.auth!;
-  const { date, analyticValueId, format } = req.query as unknown as {
+  const { date, format } = req.query as unknown as {
     date: string;
-    analyticValueId?: string;
     format: 'json' | 'csv' | 'xlsx';
   };
-  const report = await getBalance(auth.organizationId, new Date(date), analyticValueId);
+  
+  // Trouver l'exercice fiscal
+  const fiscalYear = await prisma.fiscalYear.findFirst({
+    where: {
+      organizationId: auth.organizationId,
+      startDate: { lte: new Date(date) },
+      endDate: { gte: new Date(date) },
+    },
+  });
+  
+  if (!fiscalYear) {
+    return res.status(404).json({ error: 'Aucun exercice fiscal trouvé pour cette date' });
+  }
+  
+  const balance = await generateBalance(auth.organizationId, fiscalYear.id, undefined, new Date(date));
+  
+  // Transformer pour le frontend
+  const rows = balance.map(acc => ({
+    code: acc.accountCode,
+    label: acc.accountLabel,
+    totalDebit: acc.debit,
+    totalCredit: acc.credit,
+    solde: acc.balance,
+  }));
+  
+  const totalDebit = balance.reduce((sum, acc) => sum + acc.debit, 0);
+  const totalCredit = balance.reduce((sum, acc) => sum + acc.credit, 0);
+  
   if (format === 'json') {
-    success(res, report);
+    success(res, { rows, totalDebit, totalCredit });
     return;
   }
   const columns = [
@@ -35,37 +64,49 @@ router.get('/balance', requireAuth, validateQuery(BalanceQuerySchema), async (re
     { header: 'Crédit', key: 'totalCredit' },
     { header: 'Solde', key: 'solde' },
   ];
-  if (format === 'csv') exportCsv(res, 'balance', columns, report.rows);
-  else await exportXlsx(res, 'balance', 'Balance', columns, report.rows);
+  if (format === 'csv') exportCsv(res, 'balance', columns, rows);
+  else await exportXlsx(res, 'balance', 'Balance', columns, rows);
 });
 
 router.get('/pnl', requireAuth, validateQuery(PnlQuerySchema), async (req, res) => {
   const auth = req.auth!;
-  const { dateFrom, dateTo, analyticValueId, format } = req.query as unknown as {
+  const { dateFrom, dateTo, format } = req.query as unknown as {
     dateFrom: string;
     dateTo: string;
-    analyticValueId?: string;
     format: 'json' | 'csv' | 'xlsx';
   };
-  const report = await getPnL(
+  
+  const fiscalYear = await prisma.fiscalYear.findFirst({
+    where: {
+      organizationId: auth.organizationId,
+      startDate: { lte: new Date(dateFrom) },
+      endDate: { gte: new Date(dateTo) },
+    },
+  });
+  
+  if (!fiscalYear) {
+    return res.status(404).json({ error: 'Aucun exercice fiscal trouvé' });
+  }
+  
+  const report = await generateCompteResultat(
     auth.organizationId,
+    fiscalYear.id,
     new Date(dateFrom),
-    new Date(dateTo),
-    analyticValueId,
+    new Date(dateTo)
   );
+  
   if (format === 'json') {
     success(res, report);
     return;
   }
+  
   const rows = [
-    ...report.charges.flatMap((s) => s.rows),
-    ...report.produits.flatMap((s) => s.rows),
+    ...report.charges.flatMap(group => group.rows),
+    ...report.produits.flatMap(group => group.rows),
   ];
   const columns = [
     { header: 'Code', key: 'code' },
     { header: 'Libellé', key: 'label' },
-    { header: 'Débit', key: 'totalDebit' },
-    { header: 'Crédit', key: 'totalCredit' },
     { header: 'Solde', key: 'solde' },
   ];
   if (format === 'csv') exportCsv(res, 'pnl', columns, rows);
@@ -75,14 +116,65 @@ router.get('/pnl', requireAuth, validateQuery(PnlQuerySchema), async (req, res) 
 router.get('/balance-sheet', requireAuth, validateQuery(BalanceSheetQuerySchema), async (req, res) => {
   const auth = req.auth!;
   const { date, format } = req.query as unknown as { date: string; format: 'json' | 'csv' | 'xlsx' };
-  const report = await getBalanceSheet(auth.organizationId, new Date(date));
+  
+  const fiscalYear = await prisma.fiscalYear.findFirst({
+    where: {
+      organizationId: auth.organizationId,
+      startDate: { lte: new Date(date) },
+      endDate: { gte: new Date(date) },
+    },
+  });
+  
+  if (!fiscalYear) {
+    return res.status(404).json({ error: 'Aucun exercice fiscal trouvé' });
+  }
+  
+  const bilanData = await generateBilan(auth.organizationId, fiscalYear.id, new Date(date));
+  
+  // Transform for frontend: flatten actif and passif into arrays
+  const actif = [
+    ...bilanData.actif.immobilise.accounts.map(acc => ({
+      code: acc.accountCode,
+      label: acc.accountLabel,
+      solde: acc.balance,
+    })),
+    ...bilanData.actif.circulant.accounts.map(acc => ({
+      code: acc.accountCode,
+      label: acc.accountLabel,
+      solde: acc.balance,
+    })),
+  ];
+  
+  const passif = [
+    ...bilanData.passif.capitauxPropres.accounts.map(acc => ({
+      code: acc.accountCode,
+      label: acc.accountLabel,
+      solde: acc.balance,
+    })),
+    ...bilanData.passif.dettes.accounts.map(acc => ({
+      code: acc.accountCode,
+      label: acc.accountLabel,
+      solde: acc.balance,
+    })),
+  ];
+  
+  const report = {
+    date,
+    actif,
+    passif,
+    totalActif: bilanData.actif.total,
+    totalPassif: bilanData.passif.total,
+    equilibre: bilanData.equilibre,
+  };
+  
   if (format === 'json') {
     success(res, report);
     return;
   }
+  
   const rows = [
-    ...report.actif.map((r) => ({ section: 'Actif', ...r })),
-    ...report.passif.map((r) => ({ section: 'Passif', ...r })),
+    ...actif.map((r) => ({ section: 'Actif', ...r })),
+    ...passif.map((r) => ({ section: 'Passif', ...r })),
   ];
   const columns = [
     { header: 'Section', key: 'section' },
@@ -106,26 +198,51 @@ router.get(
       dateTo: string;
       format: 'json' | 'csv' | 'xlsx';
     };
-    const report = await getGeneralLedger(
+    
+    const fiscalYear = await prisma.fiscalYear.findFirst({
+      where: {
+        organizationId: auth.organizationId,
+        startDate: { lte: new Date(dateFrom) },
+        endDate: { gte: new Date(dateTo) },
+      },
+    });
+    
+    if (!fiscalYear) {
+      return res.status(404).json({ error: 'Aucun exercice fiscal trouvé' });
+    }
+    
+    const report = await generateGrandLivre(
       auth.organizationId,
+      fiscalYear.id,
       accountCode,
       new Date(dateFrom),
-      new Date(dateTo),
+      new Date(dateTo)
     );
+    
     if (format === 'json') {
       success(res, report);
       return;
     }
+    
+    const allMovements = report.flatMap(account => 
+      account.movements.map(m => ({
+        accountCode: account.accountCode,
+        accountLabel: account.accountLabel,
+        ...m
+      }))
+    );
+    
     const columns = [
+      { header: 'Compte', key: 'accountCode' },
       { header: 'Date', key: 'date' },
       { header: 'Pièce', key: 'reference' },
       { header: 'Libellé', key: 'description' },
       { header: 'Débit', key: 'debit' },
       { header: 'Crédit', key: 'credit' },
-      { header: 'Solde', key: 'solde' },
+      { header: 'Solde', key: 'balance' },
     ];
-    if (format === 'csv') exportCsv(res, `grand-livre-${accountCode}`, columns, report.moves);
-    else await exportXlsx(res, `grand-livre-${accountCode}`, 'Grand Livre', columns, report.moves);
+    if (format === 'csv') exportCsv(res, `grand-livre-${accountCode}`, columns, allMovements);
+    else await exportXlsx(res, `grand-livre-${accountCode}`, 'Grand Livre', columns, allMovements);
   },
 );
 

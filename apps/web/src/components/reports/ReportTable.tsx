@@ -14,7 +14,10 @@ interface Props<T extends Record<string, unknown>> {
 }
 
 export function ReportTable<T extends Record<string, unknown>>({ columns, rows, emptyMessage }: Props<T>) {
-  if (rows.length === 0) {
+  // Defensive check: ensure rows is an array
+  const safeRows = Array.isArray(rows) ? rows : [];
+  
+  if (safeRows.length === 0) {
     return <div className="text-zinc-500 text-sm py-8 text-center">{emptyMessage ?? 'Aucune donnée'}</div>;
   }
   return (
@@ -35,7 +38,7 @@ export function ReportTable<T extends Record<string, unknown>>({ columns, rows, 
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {safeRows.map((row, i) => (
             <tr key={i} className="border-b border-zinc-100 hover:bg-zinc-50">
               {columns.map((c, idx) => {
                 const val = row[c.key];
