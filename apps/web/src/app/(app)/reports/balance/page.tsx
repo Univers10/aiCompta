@@ -5,7 +5,7 @@ import { api, API_BASE_URL } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ReportTable, MoneyCell } from '@/components/reports/ReportTable';
+import { DataTable } from '@/components/ui/DataTable';
 import { formatXOF } from '@/lib/utils/currency';
 import { todayIso } from '@/lib/utils/date';
 import type { BalanceReport } from '@aicompta/types';
@@ -49,26 +49,60 @@ export default function BalancePage() {
         <CardHeader>
           <CardTitle>Au {new Date(date).toLocaleDateString('fr-FR')}</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-6">
           {loading ? (
-            <div className="p-8 text-center text-zinc-500">Chargement…</div>
+            <div className="py-8 text-center text-zinc-500">Chargement…</div>
           ) : report ? (
             <>
-              <ReportTable
+              <DataTable
+                data={report.rows}
                 columns={[
-                  { header: 'Code', key: 'code' },
-                  { header: 'Libellé', key: 'label' },
-                  { header: 'Débit', key: 'totalDebit', align: 'right', format: MoneyCell },
-                  { header: 'Crédit', key: 'totalCredit', align: 'right', format: MoneyCell },
-                  { header: 'Solde', key: 'solde', align: 'right', format: MoneyCell },
+                  {
+                    key: 'code',
+                    header: 'Code',
+                    accessor: (r) => r.code,
+                    render: (val) => <span className="font-mono text-xs">{val}</span>,
+                    width: '100px',
+                  },
+                  {
+                    key: 'label',
+                    header: 'Libellé',
+                    accessor: (r) => r.label,
+                  },
+                  {
+                    key: 'totalDebit',
+                    header: 'Débit',
+                    accessor: (r) => r.totalDebit,
+                    render: (val) => val ? formatXOF(val) : '—',
+                    align: 'right',
+                    width: '140px',
+                  },
+                  {
+                    key: 'totalCredit',
+                    header: 'Crédit',
+                    accessor: (r) => r.totalCredit,
+                    render: (val) => val ? formatXOF(val) : '—',
+                    align: 'right',
+                    width: '140px',
+                  },
+                  {
+                    key: 'solde',
+                    header: 'Solde',
+                    accessor: (r) => r.solde,
+                    render: (val) => <span className="font-medium">{formatXOF(val)}</span>,
+                    align: 'right',
+                    width: '140px',
+                  },
                 ]}
-                rows={report.rows}
+                searchPlaceholder="Rechercher un compte..."
+                emptyMessage="Aucun compte"
+                pageSize={30}
               />
-              <div className="p-3 border-t border-zinc-200 bg-zinc-50 text-sm flex justify-end gap-6">
+              <div className="mt-4 p-3 border border-zinc-200 bg-zinc-50 rounded-lg text-sm flex justify-end gap-6">
                 <span>Total Débit : <strong>{formatXOF(report.totalDebit)}</strong></span>
                 <span>Total Crédit : <strong>{formatXOF(report.totalCredit)}</strong></span>
                 {report.totalDebit === report.totalCredit && (
-                  <span className="text-success">✓ Équilibrée</span>
+                  <span className="text-success font-medium">✓ Équilibrée</span>
                 )}
               </div>
             </>

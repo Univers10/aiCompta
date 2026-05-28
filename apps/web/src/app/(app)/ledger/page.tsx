@@ -5,7 +5,7 @@ import { api } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { AccordionItem } from '@/components/ui/Accordion';
+import { DataTable } from '@/components/ui/DataTable';
 import { formatXOF } from '@/lib/utils/currency';
 import { startOfMonthIso, todayIso, formatDate } from '@/lib/utils/date';
 import type { GeneralLedgerReport } from '@aicompta/types';
@@ -54,84 +54,66 @@ export default function LedgerPage() {
           <CardHeader>
             <CardTitle>{report.accountCode} — {report.accountLabel}</CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="px-5 py-2 bg-zinc-50 border-b text-sm">
-              Solde initial : <strong>{formatXOF(report.soldeInitial)}</strong>
+          <CardContent className="p-6">
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm flex justify-between items-center">
+              <span>Solde initial : <strong className="text-blue-700">{formatXOF(report.soldeInitial)}</strong></span>
+              <span>Solde final : <strong className="text-blue-700">{formatXOF(report.soldeFinal)}</strong></span>
             </div>
-            <div>
-              {(() => {
-                const grouped = report.moves.reduce((acc, move) => {
-                  const ref = move.reference || 'Sans référence';
-                  if (!acc[ref]) acc[ref] = [];
-                  acc[ref].push(move);
-                  return acc;
-                }, {} as Record<string, typeof report.moves>);
-
-                return Object.entries(grouped).map(([ref, moves]) => {
-                  const totalDebit = moves.reduce((sum, m) => sum + parseFloat(m.debit || '0'), 0);
-                  const totalCredit = moves.reduce((sum, m) => sum + parseFloat(m.credit || '0'), 0);
-                  const firstMove = moves[0];
-                  
-                  return (
-                    <AccordionItem
-                      key={ref}
-                      title={
-                        <div className="flex justify-between items-baseline w-full">
-                          <div>
-                            <span className="font-semibold">{ref}</span>
-                            <span className="ml-3 text-sm text-zinc-600">{firstMove.description}</span>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-sm text-zinc-500">{formatDate(firstMove.date)}</span>
-                            <span className="text-sm font-medium">{formatXOF(Math.abs(totalDebit - totalCredit))}</span>
-                          </div>
-                        </div>
-                      }
-                    >
-                      <table className="w-full text-sm mt-2">
-                        <thead>
-                          <tr className="border-b border-zinc-200 text-xs text-zinc-500">
-                            <th className="py-2 text-left">Date</th>
-                            <th className="py-2 text-left">Libellé</th>
-                            <th className="py-2 text-right">Débit</th>
-                            <th className="py-2 text-right">Crédit</th>
-                            <th className="py-2 text-right">Solde</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {moves.map((move, idx) => (
-                            <tr key={idx} className="border-b border-zinc-100">
-                              <td className="py-2 text-zinc-500">{formatDate(move.date)}</td>
-                              <td className="py-2">{move.description}</td>
-                              <td className="py-2 text-right tabular-nums">
-                                {move.debit ? formatXOF(move.debit) : '—'}
-                              </td>
-                              <td className="py-2 text-right tabular-nums">
-                                {move.credit ? formatXOF(move.credit) : '—'}
-                              </td>
-                              <td className="py-2 text-right tabular-nums font-medium">
-                                {formatXOF(move.solde)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="font-medium bg-zinc-50">
-                            <td colSpan={2} className="py-2 text-right">Total :</td>
-                            <td className="py-2 text-right tabular-nums">{formatXOF(totalDebit)}</td>
-                            <td className="py-2 text-right tabular-nums">{formatXOF(totalCredit)}</td>
-                            <td className="py-2 text-right tabular-nums">{formatXOF(Math.abs(totalDebit - totalCredit))}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </AccordionItem>
-                  );
-                });
-              })()}
-            </div>
-            <div className="px-5 py-3 border-t bg-zinc-50 text-sm flex justify-between">
-              <span>Total Débit : <strong>{formatXOF(report.totalDebit)}</strong> · Total Crédit : <strong>{formatXOF(report.totalCredit)}</strong></span>
-              <span>Solde final : <strong>{formatXOF(report.soldeFinal)}</strong></span>
+            
+            <DataTable
+              data={report.moves}
+              columns={[
+                {
+                  key: 'date',
+                  header: 'Date',
+                  accessor: (m) => m.date,
+                  render: (val) => formatDate(val),
+                  width: '120px',
+                },
+                {
+                  key: 'reference',
+                  header: 'Référence',
+                  accessor: (m) => m.reference || '—',
+                  width: '140px',
+                },
+                {
+                  key: 'description',
+                  header: 'Libellé',
+                  accessor: (m) => m.description,
+                },
+                {
+                  key: 'debit',
+                  header: 'Débit',
+                  accessor: (m) => m.debit,
+                  render: (val) => val ? formatXOF(val) : '—',
+                  align: 'right',
+                  width: '130px',
+                },
+                {
+                  key: 'credit',
+                  header: 'Crédit',
+                  accessor: (m) => m.credit,
+                  render: (val) => val ? formatXOF(val) : '—',
+                  align: 'right',
+                  width: '130px',
+                },
+                {
+                  key: 'solde',
+                  header: 'Solde',
+                  accessor: (m) => m.solde,
+                  render: (val) => <span className="font-medium">{formatXOF(val)}</span>,
+                  align: 'right',
+                  width: '140px',
+                },
+              ]}
+              searchPlaceholder="Rechercher dans le grand livre..."
+              emptyMessage="Aucun mouvement"
+              pageSize={25}
+            />
+            
+            <div className="mt-4 p-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm flex justify-between">
+              <span>Total Débit : <strong>{formatXOF(report.totalDebit)}</strong></span>
+              <span>Total Crédit : <strong>{formatXOF(report.totalCredit)}</strong></span>
             </div>
           </CardContent>
         </Card>

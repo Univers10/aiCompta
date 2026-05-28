@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { ReportTable, MoneyCell } from '@/components/reports/ReportTable';
+import { DataTable } from '@/components/ui/DataTable';
 import { formatXOF } from '@/lib/utils/currency';
 import { todayIso } from '@/lib/utils/date';
 import type { BalanceSheetReport } from '@aicompta/types';
@@ -37,33 +37,73 @@ export default function BalanceSheetPage() {
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
               <CardHeader><CardTitle>Actif</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <ReportTable
+              <CardContent className="p-6">
+                <DataTable
+                  data={report.actif}
                   columns={[
-                    { header: 'Code', key: 'code' },
-                    { header: 'Libellé', key: 'label' },
-                    { header: 'Montant', key: 'solde', align: 'right', format: MoneyCell },
+                    {
+                      key: 'code',
+                      header: 'Code',
+                      accessor: (r) => r.code,
+                      render: (val) => <span className="font-mono text-xs">{val}</span>,
+                      width: '100px',
+                    },
+                    {
+                      key: 'label',
+                      header: 'Libellé',
+                      accessor: (r) => r.label,
+                    },
+                    {
+                      key: 'solde',
+                      header: 'Montant',
+                      accessor: (r) => r.solde,
+                      render: (val) => <span className="font-medium">{formatXOF(val)}</span>,
+                      align: 'right',
+                      width: '140px',
+                    },
                   ]}
-                  rows={report.actif}
+                  searchPlaceholder="Rechercher..."
+                  emptyMessage="Aucun compte"
+                  pageSize={15}
                 />
-                <div className="p-3 border-t bg-zinc-50 text-sm text-right">
-                  Total Actif : <strong>{formatXOF(report.totalActif)}</strong>
+                <div className="mt-4 p-3 border border-zinc-200 bg-blue-50 rounded-lg text-sm text-right">
+                  Total Actif : <strong className="text-blue-700">{formatXOF(report.totalActif)}</strong>
                 </div>
               </CardContent>
             </Card>
             <Card>
               <CardHeader><CardTitle>Passif</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <ReportTable
+              <CardContent className="p-6">
+                <DataTable
+                  data={report.passif}
                   columns={[
-                    { header: 'Code', key: 'code' },
-                    { header: 'Libellé', key: 'label' },
-                    { header: 'Montant', key: 'solde', align: 'right', format: MoneyCell },
+                    {
+                      key: 'code',
+                      header: 'Code',
+                      accessor: (r) => r.code,
+                      render: (val) => <span className="font-mono text-xs">{val}</span>,
+                      width: '100px',
+                    },
+                    {
+                      key: 'label',
+                      header: 'Libellé',
+                      accessor: (r) => r.label,
+                    },
+                    {
+                      key: 'solde',
+                      header: 'Montant',
+                      accessor: (r) => r.solde,
+                      render: (val) => <span className="font-medium">{formatXOF(val)}</span>,
+                      align: 'right',
+                      width: '140px',
+                    },
                   ]}
-                  rows={report.passif}
+                  searchPlaceholder="Rechercher..."
+                  emptyMessage="Aucun compte"
+                  pageSize={15}
                 />
-                <div className="p-3 border-t bg-zinc-50 text-sm text-right">
-                  Total Passif : <strong>{formatXOF(report.totalPassif)}</strong>
+                <div className="mt-4 p-3 border border-zinc-200 bg-green-50 rounded-lg text-sm text-right">
+                  Total Passif : <strong className="text-green-700">{formatXOF(report.totalPassif)}</strong>
                 </div>
               </CardContent>
             </Card>

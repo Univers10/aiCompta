@@ -49,6 +49,10 @@ export async function getBalanceSheet(orgId: string, date: Date): Promise<Balanc
     for (const [code, v] of byAccount.entries()) {
       if (code.startsWith('6') || code.startsWith('7')) continue;
       const solde = v.debit.minus(v.credit);
+      
+      // Skip accounts with zero balance
+      if (solde.isZero()) continue;
+      
       const row: BalanceReportRow = {
         code,
         label: v.label,
@@ -56,19 +60,27 @@ export async function getBalanceSheet(orgId: string, date: Date): Promise<Balanc
         totalCredit: v.credit.toFixed(2),
         solde: solde.abs().toFixed(2),
       };
+      
+      // Classe 2, 3, 5 : Actif (immobilisations, stocks, trésorerie)
       if (code.startsWith('2') || code.startsWith('3') || code.startsWith('5')) {
         actif.push(row);
-        totalActif = totalActif.plus(solde);
-      } else if (code.startsWith('1')) {
+        totalActif = totalActif.plus(solde.abs());
+      } 
+      // Classe 1 : Passif (capitaux propres, dettes financières)
+      else if (code.startsWith('1')) {
         passif.push(row);
-        totalPassif = totalPassif.plus(solde.negated());
-      } else if (code.startsWith('4')) {
+        totalPassif = totalPassif.plus(solde.abs());
+      } 
+      // Classe 4 : Tiers - classification selon le signe du solde
+      // Solde débiteur (positif) = Actif (créances clients, TVA déductible)
+      // Solde créditeur (négatif) = Passif (dettes fournisseurs, TVA collectée)
+      else if (code.startsWith('4')) {
         if (solde.isPositive()) {
           actif.push(row);
-          totalActif = totalActif.plus(solde);
-        } else {
+          totalActif = totalActif.plus(solde.abs());
+        } else if (solde.isNegative()) {
           passif.push(row);
-          totalPassif = totalPassif.plus(solde.negated());
+          totalPassif = totalPassif.plus(solde.abs());
         }
       }
     }
@@ -98,10 +110,10 @@ export async function getBalanceSheet(orgId: string, date: Date): Promise<Balanc
         code: '13',
         label: "Résultat net de l'exercice",
         totalDebit: '0.00',
-        totalCredit: resultat.toFixed(2),
-        solde: resultat.toFixed(2),
+        totalCredit: resultat.abs().toFixed(2),
+        solde: resultat.abs().toFixed(2),
       });
-      totalPassif = totalPassif.plus(resultat);
+      totalPassif = totalPassif.plus(resultat.abs());
     }
 
     actif.sort((a, b) => a.code.localeCompare(b.code));

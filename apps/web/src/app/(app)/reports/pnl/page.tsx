@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { ReportTable, MoneyCell } from '@/components/reports/ReportTable';
+import { DataTable } from '@/components/ui/DataTable';
 import { formatXOF } from '@/lib/utils/currency';
 import { startOfMonthIso, todayIso } from '@/lib/utils/date';
 import type { PnLReport } from '@aicompta/types';
@@ -44,16 +44,36 @@ export default function PnlPage() {
           {report.charges.map((s, i) => (
             <Card key={`c-${i}`}>
               <CardHeader><CardTitle>{s.label} (classe {s.accountClass})</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <ReportTable
+              <CardContent className="p-6">
+                <DataTable
+                  data={s.rows}
                   columns={[
-                    { header: 'Code', key: 'code' },
-                    { header: 'Libellé', key: 'label' },
-                    { header: 'Solde', key: 'solde', align: 'right', format: MoneyCell },
+                    {
+                      key: 'code',
+                      header: 'Code',
+                      accessor: (r) => r.code,
+                      render: (val) => <span className="font-mono text-xs">{val}</span>,
+                      width: '100px',
+                    },
+                    {
+                      key: 'label',
+                      header: 'Libellé',
+                      accessor: (r) => r.label,
+                    },
+                    {
+                      key: 'solde',
+                      header: 'Solde',
+                      accessor: (r) => r.solde,
+                      render: (val) => <span className="font-medium">{formatXOF(val)}</span>,
+                      align: 'right',
+                      width: '140px',
+                    },
                   ]}
-                  rows={s.rows}
+                  searchPlaceholder="Rechercher un compte..."
+                  emptyMessage="Aucun compte"
+                  pageSize={15}
                 />
-                <div className="p-3 border-t bg-zinc-50 text-sm text-right">
+                <div className="mt-4 p-3 border border-zinc-200 bg-zinc-50 rounded-lg text-sm text-right">
                   Total : <strong>{formatXOF(s.total)}</strong>
                 </div>
               </CardContent>
@@ -62,16 +82,36 @@ export default function PnlPage() {
           {report.produits.map((s, i) => (
             <Card key={`p-${i}`}>
               <CardHeader><CardTitle>{s.label} (classe {s.accountClass})</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                <ReportTable
+              <CardContent className="p-6">
+                <DataTable
+                  data={s.rows}
                   columns={[
-                    { header: 'Code', key: 'code' },
-                    { header: 'Libellé', key: 'label' },
-                    { header: 'Solde', key: 'solde', align: 'right', format: MoneyCell },
+                    {
+                      key: 'code',
+                      header: 'Code',
+                      accessor: (r) => r.code,
+                      render: (val) => <span className="font-mono text-xs">{val}</span>,
+                      width: '100px',
+                    },
+                    {
+                      key: 'label',
+                      header: 'Libellé',
+                      accessor: (r) => r.label,
+                    },
+                    {
+                      key: 'solde',
+                      header: 'Solde',
+                      accessor: (r) => r.solde,
+                      render: (val) => <span className="font-medium">{formatXOF(val)}</span>,
+                      align: 'right',
+                      width: '140px',
+                    },
                   ]}
-                  rows={s.rows}
+                  searchPlaceholder="Rechercher un compte..."
+                  emptyMessage="Aucun compte"
+                  pageSize={15}
                 />
-                <div className="p-3 border-t bg-zinc-50 text-sm text-right">
+                <div className="mt-4 p-3 border border-zinc-200 bg-zinc-50 rounded-lg text-sm text-right">
                   Total : <strong>{formatXOF(s.total)}</strong>
                 </div>
               </CardContent>
