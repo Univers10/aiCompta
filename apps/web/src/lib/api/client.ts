@@ -8,8 +8,14 @@ export class ApiClientError extends Error {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+// Toujours utiliser le proxy Next.js pour éviter les problèmes CORS
+function getBaseUrl(): string {
+  return '/api/proxy';
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}/api/v1${path}`, {
+  const url = `${getBaseUrl()}${path}`;
+  const res = await fetch(url, {
     ...init,
     credentials: 'include',
     headers: {
@@ -24,9 +30,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* noop */
     }
-    if (res.status === 401 && typeof window !== 'undefined') {
-      window.location.href = '/login';
-    }
+    // Auth désactivée en dev - pas de redirection
+    // if (res.status === 401 && typeof window !== 'undefined') {
+    //   window.location.href = '/login';
+    // }
     throw new ApiClientError(res.status, payload);
   }
   if (res.status === 204) return undefined as T;

@@ -12,15 +12,17 @@ export const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL est requise'),
   REDIS_URL: z.string().min(1, 'REDIS_URL est requise'),
 
-  R2_ENDPOINT: z.string().url('R2_ENDPOINT doit être une URL valide'),
-  R2_BUCKET: z.string().min(1),
-  R2_ACCESS_KEY_ID: z.string().min(1),
-  R2_SECRET_ACCESS_KEY: z.string().min(1),
-  R2_REGION: z.string().default('auto'),
+  // R2 (Cloudflare) - Optionnel, utiliser MinIO à la place
+  R2_ENDPOINT: z.string().url('R2_ENDPOINT doit être une URL valide').optional(),
+  R2_BUCKET: z.string().min(1).optional(),
+  R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+  R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  R2_REGION: z.string().default('auto').optional(),
   R2_FORCE_PATH_STYLE: z
     .union([z.literal('true'), z.literal('false')])
     .default('true')
-    .transform((v) => v === 'true'),
+    .transform((v) => v === 'true')
+    .optional(),
 
   MINIO_ENDPOINT: z.string().default('localhost'),
   MINIO_PORT: z.string().default('9000'),
@@ -28,6 +30,7 @@ export const EnvSchema = z.object({
   MINIO_ACCESS_KEY: z.string().default('minioadmin'),
   MINIO_SECRET_KEY: z.string().default('minioadmin'),
   MINIO_BUCKET: z.string().default('aicompta-documents'),
+  MINIO_REGION: z.string().default('us-east-1'),
 
   AUTH_SECRET: z.string().min(32, 'AUTH_SECRET doit faire au moins 32 caractères'),
   AUTH_BASE_URL: z.string().url().default('http://localhost:3001'),
