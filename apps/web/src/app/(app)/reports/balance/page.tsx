@@ -98,11 +98,60 @@ export default function BalancePage() {
                 emptyMessage="Aucun compte"
                 pageSize={30}
               />
-              <div className="mt-4 p-3 border border-zinc-200 bg-zinc-50 rounded-lg text-sm flex justify-end gap-6">
-                <span>Total Débit : <strong>{formatXOF(report.totalDebit)}</strong></span>
-                <span>Total Crédit : <strong>{formatXOF(report.totalCredit)}</strong></span>
-                {report.totalDebit === report.totalCredit && (
-                  <span className="text-success font-medium">✓ Équilibrée</span>
+              <div className="mt-4 space-y-2">
+                <div className="p-3 border border-zinc-200 bg-zinc-50 rounded-lg text-sm">
+                  <div className="font-semibold mb-2">Vérifications SYSCOHADA :</div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs text-zinc-500">Vérification 1 : Mouvements</div>
+                      <div className="flex justify-between mt-1">
+                        <span>Total Débit :</span>
+                        <strong>{formatXOF(report.totalDebit)}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Total Crédit :</span>
+                        <strong>{formatXOF(report.totalCredit)}</strong>
+                      </div>
+                      {report.totalDebit === report.totalCredit && (
+                        <div className="text-success text-xs mt-1">✓ Équilibre des mouvements</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs text-zinc-500">Vérification 2 : Soldes</div>
+                      <div className="flex justify-between mt-1">
+                        <span>Total Soldes Débiteurs :</span>
+                        <strong>{report.totalSoldeDebiteur ? formatXOF(report.totalSoldeDebiteur) : '—'}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Total Soldes Créditeurs :</span>
+                        <strong>{report.totalSoldeCrediteur ? formatXOF(report.totalSoldeCrediteur) : '—'}</strong>
+                      </div>
+                      {report.totalSoldeDebiteur && report.totalSoldeCrediteur && report.totalSoldeDebiteur === report.totalSoldeCrediteur && (
+                        <div className="text-success text-xs mt-1">✓ Équilibre des soldes</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {report.isBalanced === true && (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-center">
+                    <span className="text-success font-semibold text-sm">
+                      ✓ Balance conforme SYSCOHADA (Débit = Crédit et SD = SC)
+                    </span>
+                  </div>
+                )}
+                {report.isBalanced === false && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-center">
+                    <span className="text-destructive font-semibold text-sm">
+                      ⚠ Balance non équilibrée - Vérifier les écritures
+                    </span>
+                  </div>
+                )}
+                {report.isBalanced === undefined && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+                    <span className="text-yellow-700 font-semibold text-sm">
+                      ℹ Redémarrez l'API pour activer les vérifications SYSCOHADA
+                    </span>
+                  </div>
                 )}
               </div>
             </>

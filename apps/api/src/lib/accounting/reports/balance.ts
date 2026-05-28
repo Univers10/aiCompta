@@ -6,6 +6,7 @@ import { withOrg } from '../../db/tenant';
 /**
  * Balance générale à une date donnée.
  * Agrège les mouvements XOF par compte (Débit / Crédit / Solde).
+ * SYSCOHADA 2025 : Seules les écritures VALIDÉES sont incluses.
  */
 export async function getBalance(
   orgId: string,
@@ -16,7 +17,10 @@ export async function getBalance(
     const lines = await prisma.journalLine.findMany({
       where: {
         organizationId: id,
-        entry: { date: { lte: date } },
+        entry: { 
+          date: { lte: date },
+          status: 'VALIDATED', // SYSCOHADA 2025 : Seulement les écritures validées
+        },
         ...(analyticValueId
           ? { allocations: { some: { analyticValueId } } }
           : {}),
@@ -44,6 +48,7 @@ export async function getBalance(
 
     const rows: BalanceReportRow[] = Array.from(byAccount.entries())
       .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([_, v]) => !v.debit.isZero() || !v.credit.isZero()) // Exclure les comptes à zéro
       .map(([code, v]) => ({
         code,
         label: v.label,
@@ -52,18 +57,38 @@ export async function getBalance(
         solde: v.debit.minus(v.credit).toFixed(2),
       }));
 
+    // Calcul des totaux selon SYSCOHADA
     let totalDebit = new Decimal(0);
     let totalCredit = new Decimal(0);
+    let totalSoldeDebiteur = new Decimal(0);
+    let totalSoldeCrediteur = new Decimal(0);
+    
     for (const r of rows) {
       totalDebit = totalDebit.plus(r.totalDebit);
       totalCredit = totalCredit.plus(r.totalCredit);
+      
+      const solde = new Decimal(r.solde);
+      if (solde.isPositive()) {
+        totalSoldeDebiteur = totalSoldeDebiteur.plus(solde);
+      } else if (solde.isNegative()) {
+        totalSoldeCrediteur = totalSoldeCrediteur.plus(solde.abs());
+      }
     }
+
+    // Vérifications SYSCOHADA obligatoires
+    // Vérification 1 : Total Mouvements Débit = Total Mouvements Crédit
+    // Vérification 2 : Total Soldes Débiteurs = Total Soldes Créditeurs
+    const isBalanced = totalDebit.equals(totalCredit) && 
+                       totalSoldeDebiteur.equals(totalSoldeCrediteur);
 
     return {
       date: date.toISOString(),
       rows,
       totalDebit: totalDebit.toFixed(2),
       totalCredit: totalCredit.toFixed(2),
+      totalSoldeDebiteur: totalSoldeDebiteur.toFixed(2),
+      totalSoldeCrediteur: totalSoldeCrediteur.toFixed(2),
+      isBalanced,
     };
   });
 }

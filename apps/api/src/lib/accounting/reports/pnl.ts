@@ -35,6 +35,14 @@ function aggregateByClass(rows: AccountAgg[], prefix: string): {
   };
 }
 
+/**
+ * Compte de Résultat (P&L) SYSCOHADA 2025
+ * Classe 6 : Charges
+ * Classe 7 : Produits
+ * Résultat = Produits - Charges
+ * 
+ * SYSCOHADA 2025 : Seules les écritures VALIDÉES sont incluses.
+ */
 export async function getPnL(
   orgId: string,
   dateFrom: Date,
@@ -42,11 +50,15 @@ export async function getPnL(
   analyticValueId?: string,
 ): Promise<PnLReport> {
   return withOrg(orgId, async (id) => {
+    // SYSCOHADA 2025 : Seulement les écritures validées
     const lines = await prisma.journalLine.findMany({
       where: {
         organizationId: id,
         accountCode: { startsWith: '6' },
-        entry: { date: { gte: dateFrom, lte: dateTo } },
+        entry: { 
+          date: { gte: dateFrom, lte: dateTo },
+          status: 'VALIDATED', // SYSCOHADA 2025
+        },
         ...(analyticValueId ? { allocations: { some: { analyticValueId } } } : {}),
       },
       select: { accountCode: true, accountLabel: true, lineType: true, amountXof: true },
@@ -56,7 +68,10 @@ export async function getPnL(
       where: {
         organizationId: id,
         accountCode: { startsWith: '7' },
-        entry: { date: { gte: dateFrom, lte: dateTo } },
+        entry: { 
+          date: { gte: dateFrom, lte: dateTo },
+          status: 'VALIDATED', // SYSCOHADA 2025
+        },
         ...(analyticValueId ? { allocations: { some: { analyticValueId } } } : {}),
       },
       select: { accountCode: true, accountLabel: true, lineType: true, amountXof: true },

@@ -22,7 +22,52 @@ export interface InvoiceData {
   confidence: number;
 }
 
-const EXTRACTION_PROMPT = `Tu es un expert comptable spécialisé dans l'extraction de données de factures.
+const EXTRACTION_PROMPT = `Tu es un expert comptable SYSCOHADA Révisé 2025 spécialisé dans l'extraction de données de factures.
+
+CONTEXTE SYSCOHADA RÉVISÉ 2025 :
+Le SYSCOHADA (Système Comptable OHADA) est le référentiel comptable unifié applicable dans les 17 États membres de l'OHADA (Sénégal, Côte d'Ivoire, Mali, Burkina Faso, Niger, Togo, Bénin, Guinée-Bissau, Cameroun, Gabon, Congo, RCA, RDC, Guinée Équatoriale, Tchad, Guinée).
+
+PLAN COMPTABLE SYSCOHADA - CLASSES PRINCIPALES :
+- Classe 1 : Comptes de ressources durables (Capitaux propres, Emprunts)
+- Classe 2 : Comptes d'actif immobilisé (Immobilisations)
+- Classe 3 : Comptes de stocks
+- Classe 4 : Comptes de tiers (Fournisseurs, Clients, TVA, Personnel, État)
+- Classe 5 : Comptes de trésorerie (Banques, Caisse)
+- Classe 6 : Comptes de charges des activités ordinaires
+- Classe 7 : Comptes de produits des activités ordinaires
+- Classe 8 : Comptes des autres charges et produits (HAO)
+
+COMPTES CRITIQUES POUR FACTURES D'ACHAT :
+- 401 : Fournisseurs, dettes en compte (CRÉDIT pour factures d'achat)
+- 4452 : État, TVA récupérable sur achats (DÉBIT)
+- 601 : Achats de marchandises (DÉBIT)
+- 602 : Achats de matières premières et fournitures liées (DÉBIT)
+- 604 : Achats stockés de matières et fournitures consommables (DÉBIT)
+- 605 : Autres achats (DÉBIT)
+- 621 : Sous-traitance générale (DÉBIT)
+- 622 : Locations et charges locatives (DÉBIT)
+- 624 : Entretien, réparations et maintenance (DÉBIT)
+
+ÉCRITURE COMPTABLE SYSCOHADA - FACTURE D'ACHAT :
+┌─────────────────────────────────────────────────────────┐
+│ DÉBIT  │ 60x/62x    │ Achats/Services      │ Montant HT  │
+│ DÉBIT  │ 4452       │ TVA récupérable      │ Montant TVA │
+│ CRÉDIT │ 401        │ Fournisseurs         │ Montant TTC │
+└─────────────────────────────────────────────────────────┘
+
+PRINCIPE DE LA PARTIE DOUBLE :
+Total DÉBIT = Total CRÉDIT
+HT + TVA = TTC (équation fondamentale)
+
+RÈGLES DE VALIDATION SYSCOHADA 2025 :
+1. Équation fondamentale : HT + TVA = TTC (OBLIGATOIRE)
+2. TVA standard zone OHADA : 18% (peut varier selon pays : 0%, 5%, 10%, 18%, 19%)
+3. Tous les montants DOIVENT être positifs (pas de négatifs)
+4. Le fournisseur DOIT être identifié clairement
+5. La date de facture DOIT être au format YYYY-MM-DD
+6. La devise FCFA/F CFA = "XOF" (Franc CFA)
+7. Vérifier la cohérence des items : Σ items.totalHT = totalHT
+8. Vérifier la cohérence de la TVA : Σ items.tvaAmount = totalTVA
 
 Analyse cette facture et extrais les informations suivantes au format JSON :
 
@@ -49,17 +94,25 @@ Analyse cette facture et extrais les informations suivantes au format JSON :
   "confidence": score de confiance entre 0 et 1
 }
 
-IMPORTANT:
+INSTRUCTIONS CRITIQUES :
 - Retourne UNIQUEMENT le JSON, sans texte avant ou après
 - Si une information n'est pas trouvée, utilise null
-- Pour les montants, utilise des nombres (pas de strings)
+- Pour les montants, utilise des nombres positifs (pas de strings, pas de négatifs)
 - Pour la devise, si c'est FCFA ou F CFA, utilise "XOF"
+- VÉRIFIE que totalHT + totalTVA = totalTTC (sinon ajuste les valeurs)
+- VÉRIFIE que la somme des items.totalHT = totalHT
+- VÉRIFIE que la somme des items.tvaAmount = totalTVA
 - Le score de confiance doit refléter la qualité de l'extraction :
-  * 0.95-1.0 : Toutes les données sont claires et lisibles
+  * 0.95-1.0 : Toutes les données sont claires, lisibles et cohérentes (HT+TVA=TTC vérifié)
   * 0.85-0.94 : Données complètes mais quelques incertitudes mineures
   * 0.70-0.84 : Données partielles ou qualité d'image moyenne
-  * <0.70 : Données manquantes ou image de mauvaise qualité
-- Sois rigoureux sur le score de confiance, il détermine si un humain doit vérifier`;
+  * <0.70 : Données manquantes, incohérentes ou image de mauvaise qualité
+- Sois rigoureux sur le score de confiance, il détermine si un humain doit vérifier
+
+EXEMPLES DE COHÉRENCE :
+✓ CORRECT : totalHT=100000, totalTVA=18000, totalTTC=118000 (100000+18000=118000)
+✗ INCORRECT : totalHT=100000, totalTVA=18000, totalTTC=100000 (incohérent)
+✗ INCORRECT : totalHT=-100000 (montant négatif impossible pour un achat)`;
 
 /**
  * Données mock pour les tests sans API key
@@ -228,7 +281,33 @@ export async function extractInvoiceData(
       data.confidence = 0.5;
     }
 
+    // Validation SYSCOHADA : vérifier la cohérence des montants
+    const ht = data.totalHT ?? 0;
+    const tva = data.totalTVA ?? 0;
+    const ttc = data.totalTTC ?? 0;
+    
+    // Vérifier que les montants sont positifs
+    if (ht < 0 || tva < 0 || ttc < 0) {
+      console.warn('[Claude] SYSCOHADA: Negative amounts detected, taking absolute values');
+      data.totalHT = Math.abs(ht);
+      data.totalTVA = Math.abs(tva);
+      data.totalTTC = Math.abs(ttc);
+    }
+    
+    // Vérifier l'équation HT + TVA = TTC (avec tolérance de 1 XOF pour les arrondis)
+    const calculatedTTC = (data.totalHT ?? 0) + (data.totalTVA ?? 0);
+    const difference = Math.abs(calculatedTTC - (data.totalTTC ?? 0));
+    
+    if (difference > 1) {
+      console.warn(`[Claude] SYSCOHADA: Incoherent amounts detected (HT=${data.totalHT} + TVA=${data.totalTVA} ≠ TTC=${data.totalTTC})`);
+      console.warn(`[Claude] SYSCOHADA: Adjusting TTC to ${calculatedTTC} to respect HT + TVA = TTC`);
+      data.totalTTC = calculatedTTC;
+      // Réduire le score de confiance
+      data.confidence = Math.min(data.confidence, 0.7);
+    }
+
     console.log(`[Claude] Extraction complete (confidence: ${(data.confidence * 100).toFixed(0)}%)`);
+    console.log(`[Claude] SYSCOHADA validation: HT=${data.totalHT} + TVA=${data.totalTVA} = TTC=${data.totalTTC}`);
     
     return data;
   } catch (error) {

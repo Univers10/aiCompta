@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import type { ExtractionResult } from '@aicompta/types';
 import { validateAmounts, validateJournalBalance, type LineType } from './validators';
 import { resolveAccountForDocument, getAccountLabel } from './chart-of-accounts';
+import { getNextSequenceNumber } from './sequence';
 
 export interface BuiltLine {
   accountCode: string;
@@ -20,9 +21,13 @@ export interface BuiltEntry {
   reference: string;
   description: string;
   date: Date;
-  journal: 'PURCHASE' | 'SALES' | 'BANK' | 'MISC';
+  journal: 'PURCHASE' | 'SALES' | 'BANK' | 'CASH' | 'MISC';
   documentId: string | null;
+  externalRef?: string | null;
   lines: BuiltLine[];
+  // Champs SYSCOHADA 2025
+  sequenceNumber?: number;
+  status?: 'DRAFT' | 'VALIDATED' | 'REVERSED';
 }
 
 interface DocumentContext {
@@ -41,15 +46,18 @@ function toAmountXof(amount: Decimal, fxRate: Decimal): Decimal {
 
 /**
  * Construit l'écriture comptable d'une facture d'achat.
- * Schéma SYSCOHADA :
+ * Schéma SYSCOHADA 2025 :
  *   60x/62x (charges)   D HT
  *   4452 (TVA récup.)   D TVA
  *   401 (Fournisseur)   C TTC
+ * 
+ * La référence sera générée automatiquement au format ACH-2025-00001
  */
 export async function buildPurchaseInvoiceEntry(
   extracted: ExtractionResult,
   doc: DocumentContext,
   orgId: string,
+  fiscalYearId?: string,
 ): Promise<BuiltEntry> {
   const ht = new Decimal(extracted.totalHT);
   const tva = new Decimal(extracted.totalTVA);
@@ -113,26 +121,43 @@ export async function buildPurchaseInvoiceEntry(
     lines.map((l) => ({ lineType: l.lineType, amount: l.amountXof })),
   );
 
+  // Générer la référence SYSCOHADA si fiscalYearId est fourni
+  let reference = doc.invoiceNumber ?? extracted.invoiceNumber ?? `ACH-${doc.id.slice(0, 8)}`;
+  let sequenceNumber: number | undefined;
+  
+  if (fiscalYearId) {
+    const seq = await getNextSequenceNumber(orgId, fiscalYearId, 'PURCHASE');
+    reference = seq.reference;
+    sequenceNumber = seq.sequenceNumber;
+  }
+
   return {
-    reference: doc.invoiceNumber ?? extracted.invoiceNumber ?? `ACH-${doc.id.slice(0, 8)}`,
+    reference,
     description,
     date: doc.invoiceDate ?? new Date(extracted.date ?? Date.now()),
     journal: 'PURCHASE',
     documentId: doc.id,
+    externalRef: doc.invoiceNumber ?? extracted.invoiceNumber,
     lines,
+    sequenceNumber,
+    status: 'DRAFT', // Toutes les nouvelles écritures sont en brouillard
   };
 }
 
 /**
  * Construit l'écriture d'une facture de vente.
+ * Schéma SYSCOHADA 2025 :
  *   411 (Client)         D TTC
  *   70x (Ventes)         C HT
  *   4431 (TVA collectée) C TVA
+ * 
+ * La référence sera générée automatiquement au format VTE-2025-00001
  */
 export async function buildSalesInvoiceEntry(
   extracted: ExtractionResult,
   doc: DocumentContext,
   orgId: string,
+  fiscalYearId?: string,
 ): Promise<BuiltEntry> {
   const ht = new Decimal(extracted.totalHT);
   const tva = new Decimal(extracted.totalTVA);
@@ -192,26 +217,43 @@ export async function buildSalesInvoiceEntry(
 
   validateJournalBalance(lines.map((l) => ({ lineType: l.lineType, amount: l.amountXof })));
 
+  // Générer la référence SYSCOHADA si fiscalYearId est fourni
+  let reference = doc.invoiceNumber ?? extracted.invoiceNumber ?? `VTE-${doc.id.slice(0, 8)}`;
+  let sequenceNumber: number | undefined;
+  
+  if (fiscalYearId) {
+    const seq = await getNextSequenceNumber(orgId, fiscalYearId, 'SALES');
+    reference = seq.reference;
+    sequenceNumber = seq.sequenceNumber;
+  }
+
   return {
-    reference: doc.invoiceNumber ?? extracted.invoiceNumber ?? `VTE-${doc.id.slice(0, 8)}`,
+    reference,
     description,
     date: doc.invoiceDate ?? new Date(extracted.date ?? Date.now()),
     journal: 'SALES',
     documentId: doc.id,
+    externalRef: doc.invoiceNumber ?? extracted.invoiceNumber,
     lines,
+    sequenceNumber,
+    status: 'DRAFT',
   };
 }
 
 /**
  * Construit l'écriture d'une note de frais.
+ * Schéma SYSCOHADA 2025 :
  *   6xx (charge)          D HT
  *   4452 (TVA récup.)     D TVA
  *   571 (Caisse) ou 421   C TTC
+ * 
+ * La référence sera générée automatiquement au format CA-2025-00001 (Caisse)
  */
 export async function buildExpenseNoteEntry(
   extracted: ExtractionResult,
   doc: DocumentContext,
   orgId: string,
+  fiscalYearId?: string,
 ): Promise<BuiltEntry> {
   const ht = new Decimal(extracted.totalHT);
   const tva = new Decimal(extracted.totalTVA);
@@ -267,13 +309,28 @@ export async function buildExpenseNoteEntry(
 
   validateJournalBalance(lines.map((l) => ({ lineType: l.lineType, amount: l.amountXof })));
 
+  // Générer la référence SYSCOHADA si fiscalYearId est fourni
+  // Note de frais = Journal de Caisse (CASH)
+  let reference = doc.invoiceNumber ?? `NDF-${doc.id.slice(0, 8)}`;
+  let sequenceNumber: number | undefined;
+  const journal = 'CASH'; // SYSCOHADA 2025: Note de frais → Caisse
+  
+  if (fiscalYearId) {
+    const seq = await getNextSequenceNumber(orgId, fiscalYearId, journal);
+    reference = seq.reference;
+    sequenceNumber = seq.sequenceNumber;
+  }
+
   return {
-    reference: doc.invoiceNumber ?? `NDF-${doc.id.slice(0, 8)}`,
+    reference,
     description,
     date: doc.invoiceDate ?? new Date(extracted.date ?? Date.now()),
-    journal: 'MISC',
+    journal,
     documentId: doc.id,
+    externalRef: doc.invoiceNumber,
     lines,
+    sequenceNumber,
+    status: 'DRAFT',
   };
 }
 
@@ -281,7 +338,7 @@ export interface ReversalInput {
   id: string;
   reference: string;
   description: string;
-  journal: 'PURCHASE' | 'SALES' | 'BANK' | 'MISC';
+  journal: 'PURCHASE' | 'SALES' | 'BANK' | 'CASH' | 'MISC';
   documentId: string | null;
   lines: Array<{
     accountCode: string;

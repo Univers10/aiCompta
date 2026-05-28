@@ -73,6 +73,9 @@ export interface BalanceReport {
   rows: BalanceReportRow[];
   totalDebit: string;
   totalCredit: string;
+  totalSoldeDebiteur: string;
+  totalSoldeCrediteur: string;
+  isBalanced: boolean;
 }
 
 export interface PnLSection {

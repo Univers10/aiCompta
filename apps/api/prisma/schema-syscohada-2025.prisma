@@ -1,0 +1,685 @@
+// AI Compta — Prisma schema SYSCOHADA 2025
+// Conformité complète SYSCOHADA Révisé 2025
+// Immutabilité comptable stricte (jamais de DELETE métier)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// Enums SYSCOHADA 2025
+// =====================================================
+
+enum DocumentStatus {
+  PENDING       // En attente de traitement
+  PROCESSING    // En cours d'extraction IA
+  EXTRACTED     // Données extraites
+  NEEDS_REVIEW  // Nécessite révision humaine
+  VALIDATED     // Validé, prêt pour comptabilisation
+  POSTED        // Comptabilisé (écriture créée)
+  REJECTED      // Rejeté
+  CANCELLED     // Annulé
+}
+
+enum DocumentType {
+  PURCHASE_INVOICE  // Facture d'achat (fournisseur)
+  SALES_INVOICE     // Facture de vente (client)
+  RECEIPT           // Reçu
+  EXPENSE_NOTE      // Note de frais
+  BANK_STATEMENT    // Relevé bancaire
+  CREDIT_NOTE       // Avoir
+  CASH_RECEIPT      // Reçu de caisse
+  PAYMENT_ORDER     // Ordre de paiement
+}
+
+enum UserRole {
+  OWNER       // Propriétaire (tous droits)
+  ACCOUNTANT  // Comptable (validation écritures)
+  VIEWER      // Lecteur (consultation uniquement)
+}
+
+// Journaux SYSCOHADA 2025
+enum JournalType {
+  PURCHASE  // AC - Journal des Achats
+  SALES     // VE - Journal des Ventes
+  BANK      // BQ - Journal de Banque
+  CASH      // CA - Journal de Caisse (nouveau)
+  MISC      // OD - Journal des Opérations Diverses
+}
+
+enum LineType {
+  DEBIT   // Débit
+  CREDIT  // Crédit
+}
+
+// Classification SYSCOHADA (Classes 1-8)
+enum AccountClass {
+  CLASS_1  // Comptes de ressources durables
+  CLASS_2  // Comptes d'actif immobilisé
+  CLASS_3  // Comptes de stocks
+  CLASS_4  // Comptes de tiers
+  CLASS_5  // Comptes de trésorerie
+  CLASS_6  // Comptes de charges
+  CLASS_7  // Comptes de produits
+  CLASS_8  // Comptes HAO (Hors Activités Ordinaires)
+}
+
+enum ChatRole {
+  user
+  assistant
+  tool
+}
+
+// Statut des écritures SYSCOHADA
+enum EntryStatus {
+  DRAFT      // Brouillard (provisoire, modifiable)
+  VALIDATED  // Validée (définitive, immuable)
+  REVERSED   // Extournée (annulée par contrepassation)
+}
+
+// Statut des périodes comptables
+enum PeriodStatus {
+  OPEN      // Ouverte (écritures autorisées)
+  CLOSED    // Clôturée (écritures interdites)
+  ARCHIVED  // Archivée (exercice clos définitivement)
+}
+
+// =====================================================
+// Multi-tenant core
+// =====================================================
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  
+  // Informations SYSCOHADA
+  taxId     String?  // Numéro d'identification fiscale
+  rccm      String?  // Registre du Commerce et du Crédit Mobilier
+  legalForm String?  // Forme juridique (SARL, SA, etc.)
+  address   String?
+  city      String?
+  country   String   @default("SN") // Code pays ISO (SN, CI, ML, etc.)
+  
+  // Paramètres comptables
+  baseCurrency        String   @default("XOF") // Devise de base (XOF)
+  fiscalYearStartMonth Int     @default(1)     // Mois de début d'exercice (1-12)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships          Membership[]
+  fiscalYears          FiscalYear[]
+  accountingPeriods    AccountingPeriod[]
+  chartOfAccounts      ChartOfAccount[]
+  suppliers            Supplier[]
+  customers            Customer[]
+  analyticAxes         AnalyticAxis[]
+  analyticValues       AnalyticValue[]
+  analyticAllocations  AnalyticAllocation[]
+  documents            Document[]
+  extractionAttempts   ExtractionAttempt[]
+  journalEntries       JournalEntry[]
+  journalLines         JournalLine[]
+  journalSequences     JournalSequence[]
+  chatThreads          ChatThread[]
+  chatMessages         ChatMessage[]
+  auditLogs            AuditLog[]
+  invitations          Invitation[]
+  exchangeRates        ExchangeRate[]
+  exchangeDifferences  ExchangeDifference[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String?
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships    Membership[]
+  sessions       Session[]
+  chatThreads    ChatThread[]
+  magicLinks     MagicLink[]
+  auditLogs      AuditLog[]
+  journalEntries JournalEntry[]
+  validatedEntries JournalEntry[] @relation("ValidatedBy")
+}
+
+model Membership {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  role           UserRole
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MagicLink {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+model Invitation {
+  id             String   @id @default(uuid())
+  organizationId String
+  email          String
+  role           UserRole
+  token          String   @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+}
+
+// =====================================================
+// Configuration comptable SYSCOHADA
+// =====================================================
+
+model FiscalYear {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String   // Ex: "2025"
+  startDate      DateTime
+  endDate        DateTime
+  isClosed       Boolean  @default(false)
+  closedAt       DateTime?
+  closedById     String?
+  createdAt      DateTime @default(now())
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  journalEntries    JournalEntry[]
+  accountingPeriods AccountingPeriod[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// Périodes comptables mensuelles (clôture mensuelle SYSCOHADA)
+model AccountingPeriod {
+  id             String       @id @default(uuid())
+  organizationId String
+  fiscalYearId   String
+  name           String       // Ex: "Janvier 2025"
+  startDate      DateTime
+  endDate        DateTime
+  status         PeriodStatus @default(OPEN)
+  closedAt       DateTime?
+  closedById     String?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fiscalYear     FiscalYear     @relation(fields: [fiscalYearId], references: [id])
+  journalEntries JournalEntry[]
+
+  @@unique([organizationId, fiscalYearId, name])
+  @@index([organizationId, fiscalYearId])
+}
+
+// Plan comptable SYSCOHADA
+model ChartOfAccount {
+  id             String       @id @default(uuid())
+  organizationId String
+  code           String       // Ex: "401", "4452", "601"
+  label          String       // Ex: "Fournisseurs", "TVA récupérable"
+  class          AccountClass // Classe SYSCOHADA (1-8)
+  parentCode     String?      // Code du compte parent
+  isSystem       Boolean      @default(false) // Compte système (non modifiable)
+  isActive       Boolean      @default(true)  // Compte actif
+  
+  // Métadonnées SYSCOHADA
+  normalBalance  LineType     // Solde normal (DEBIT ou CREDIT)
+  isTiers        Boolean      @default(false) // Compte de tiers (401, 411, etc.)
+  requiresTiers  Boolean      @default(false) // Exige fournisseur/client
+  
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@index([organizationId, class])
+  @@index([organizationId, parentCode])
+}
+
+// Numérotation séquentielle par journal (SYSCOHADA)
+model JournalSequence {
+  id             String      @id @default(uuid())
+  organizationId String
+  fiscalYearId   String?     // Null = global, sinon par exercice
+  journal        JournalType
+  prefix         String      // Ex: "ACH", "VTE", "BQ", "CA", "OD"
+  currentNumber  Int         @default(0)
+  year           Int         // Année (2025)
+  
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, journal, year])
+  @@index([organizationId, journal])
+}
+
+model Supplier {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String?  // Code fournisseur (optionnel)
+  name           String
+  taxId          String?  // Numéro fiscal
+  rccm           String?  // RCCM
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  country        String   @default("SN")
+  
+  // Paramètres comptables
+  accountCode    String?  // Compte auxiliaire (ex: 4011001)
+  paymentTerms   Int?     // Délai de paiement (jours)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  journalLines JournalLine[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, name])
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  organizationId String
+  code           String?  // Code client (optionnel)
+  name           String
+  taxId          String?
+  rccm           String?
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  country        String   @default("SN")
+  
+  // Paramètres comptables
+  accountCode    String?  // Compte auxiliaire (ex: 4111001)
+  paymentTerms   Int?     // Délai de paiement (jours)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    Document[]
+  journalLines JournalLine[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, name])
+}
+
+model AnalyticAxis {
+  id             String  @id @default(uuid())
+  organizationId String
+  code           String  // Ex: "PROJ", "DEPT", "GEO"
+  name           String  // Ex: "Projets", "Départements"
+  description    String?
+  isActive       Boolean @default(true)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values       AnalyticValue[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model AnalyticValue {
+  id             String  @id @default(uuid())
+  analyticAxisId String
+  organizationId String
+  code           String  // Ex: "PROJ001", "DEPT-RH"
+  label          String  // Ex: "Projet Alpha", "Ressources Humaines"
+  isActive       Boolean @default(true)
+
+  axis         AnalyticAxis         @relation(fields: [analyticAxisId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  allocations  AnalyticAllocation[]
+
+  @@unique([analyticAxisId, code])
+  @@index([organizationId])
+}
+
+// =====================================================
+// Documents et extraction
+// =====================================================
+
+model Document {
+  id              String         @id @default(uuid())
+  organizationId  String
+  status          DocumentStatus @default(PENDING)
+  type            DocumentType?
+  
+  // Fichier
+  fileName        String
+  mimeType        String
+  fileSizeBytes   Int
+  fileHash        String
+  fileUrl         String
+  
+  // Extraction IA
+  extractedData   Json?
+  confidence      Decimal?       @db.Decimal(5, 4) // 0.0000 à 1.0000
+  
+  // Données facture
+  invoiceNumber   String?
+  invoiceDate     DateTime?
+  dueDate         DateTime?
+  supplierId      String?
+  customerId      String?
+  
+  // Montants
+  totalHT         Decimal?       @db.Decimal(20, 4)
+  totalTVA        Decimal?       @db.Decimal(20, 4)
+  totalTTC        Decimal?       @db.Decimal(20, 4)
+  
+  // Devise
+  currency        String         @default("XOF")
+  fxRate          Decimal        @default(1) @db.Decimal(20, 6)
+  
+  // Référence pièce justificative (SYSCOHADA)
+  externalRef     String?        // Référence externe si document non scanné
+  
+  // Validation
+  validatedById   String?
+  validatedAt     DateTime?
+  rejectedReason  String?
+  
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id])
+  customer           Customer?           @relation(fields: [customerId], references: [id])
+  extractionAttempts ExtractionAttempt[]
+  journalEntries     JournalEntry[]
+
+  @@unique([organizationId, fileHash])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, invoiceNumber, supplierId])
+}
+
+model ExtractionAttempt {
+  id               String   @id @default(uuid())
+  documentId       String
+  organizationId   String
+  model            String   // Ex: "claude-3-5-sonnet-20241022"
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  costUsd          Decimal  @default(0) @db.Decimal(20, 6)
+  confidence       Decimal  @default(0) @db.Decimal(5, 4)
+  rawResponse      Json
+  success          Boolean
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// =====================================================
+// Comptabilité SYSCOHADA 2025
+// =====================================================
+
+model JournalEntry {
+  id                  String      @id @default(uuid())
+  organizationId      String
+  fiscalYearId        String
+  accountingPeriodId  String?     // Période mensuelle
+  journal             JournalType
+  
+  // Numérotation SYSCOHADA (séquentielle par journal)
+  sequenceNumber      Int         // Numéro séquentiel (1, 2, 3...)
+  reference           String      // Ex: "ACH-2025-00001"
+  
+  // Dates
+  date                DateTime    // Date de l'opération
+  valueDate           DateTime?   // Date de valeur (banque)
+  
+  // Description
+  description         String
+  
+  // Pièce justificative (SYSCOHADA obligatoire)
+  documentId          String?     // Document scanné
+  externalRef         String?     // Référence externe si pas de scan
+  
+  // Statut SYSCOHADA
+  status              EntryStatus @default(DRAFT)
+  
+  // Extourne (contrepassation SYSCOHADA)
+  isReversal          Boolean     @default(false)
+  reversalOfId        String?
+  reversalReason      String?
+  
+  // Validation
+  validatedAt         DateTime?
+  validatedById       String?
+  
+  // Audit
+  postedAt            DateTime    @default(now())
+  createdById         String
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fiscalYear       FiscalYear        @relation(fields: [fiscalYearId], references: [id])
+  accountingPeriod AccountingPeriod? @relation(fields: [accountingPeriodId], references: [id])
+  document         Document?         @relation(fields: [documentId], references: [id])
+  reversalOf       JournalEntry?     @relation("Reversal", fields: [reversalOfId], references: [id])
+  reversedBy       JournalEntry[]    @relation("Reversal")
+  createdBy        User              @relation(fields: [createdById], references: [id])
+  validatedBy      User?             @relation("ValidatedBy", fields: [validatedById], references: [id])
+  lines            JournalLine[]
+
+  @@unique([organizationId, journal, sequenceNumber, fiscalYearId])
+  @@index([organizationId, date])
+  @@index([organizationId, journal])
+  @@index([organizationId, status])
+  @@index([documentId])
+  @@index([fiscalYearId])
+  @@index([accountingPeriodId])
+}
+
+model JournalLine {
+  id             String   @id @default(uuid())
+  journalEntryId String
+  organizationId String
+  lineNumber     Int      // Numéro de ligne (1, 2, 3...)
+  
+  // Compte
+  accountCode    String
+  accountLabel   String
+  
+  // Débit/Crédit
+  lineType       LineType
+  
+  // Montants
+  amount         Decimal  @db.Decimal(20, 4) // Montant en devise d'origine
+  currency       String   @default("XOF")
+  fxRate         Decimal  @default(1) @db.Decimal(20, 6)
+  amountXof      Decimal  @db.Decimal(20, 4) // Montant en XOF (devise de base)
+  
+  // Description
+  description    String?
+  
+  // Tiers (si compte de tiers)
+  supplierId     String?
+  customerId     String?
+  
+  // Lettrage (rapprochement)
+  letteringCode  String?  // Code de lettrage (ex: "A", "B", "AA")
+  letteredAt     DateTime?
+
+  entry        JournalEntry         @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier?            @relation(fields: [supplierId], references: [id])
+  customer     Customer?            @relation(fields: [customerId], references: [id])
+  allocations  AnalyticAllocation[]
+
+  @@index([organizationId, accountCode])
+  @@index([journalEntryId, lineNumber])
+  @@index([letteringCode])
+}
+
+model AnalyticAllocation {
+  id              String  @id @default(uuid())
+  journalLineId   String
+  organizationId  String
+  analyticValueId String
+  percentage      Decimal @db.Decimal(7, 4) // 0.0000 à 100.0000
+  amountXof       Decimal @db.Decimal(20, 4)
+
+  line         JournalLine   @relation(fields: [journalLineId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  value        AnalyticValue @relation(fields: [analyticValueId], references: [id])
+
+  @@index([organizationId])
+  @@index([journalLineId])
+}
+
+// =====================================================
+// Gestion multi-devises SYSCOHADA
+// =====================================================
+
+// Taux de change historiques
+model ExchangeRate {
+  id             String   @id @default(uuid())
+  organizationId String
+  fromCurrency   String   // Ex: "EUR", "USD"
+  toCurrency     String   // Ex: "XOF"
+  rate           Decimal  @db.Decimal(20, 6)
+  date           DateTime
+  source         String?  // Source du taux (ex: "BCEAO", "Manual")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, fromCurrency, toCurrency, date])
+  @@index([organizationId, date])
+}
+
+// Écarts de change (comptes 476/477 SYSCOHADA)
+model ExchangeDifference {
+  id             String   @id @default(uuid())
+  organizationId String
+  journalEntryId String?  // Écriture de constatation
+  accountCode    String   // 476 (gain) ou 477 (perte)
+  amount         Decimal  @db.Decimal(20, 4)
+  currency       String
+  originalRate   Decimal  @db.Decimal(20, 6)
+  currentRate    Decimal  @db.Decimal(20, 6)
+  date           DateTime
+  description    String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, date])
+  @@index([accountCode])
+}
+
+// =====================================================
+// Copilote IA
+// =====================================================
+
+model ChatThread {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  title          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     ChatMessage[]
+
+  @@index([organizationId, userId, createdAt])
+}
+
+model ChatMessage {
+  id             String   @id @default(uuid())
+  threadId       String
+  organizationId String
+  role           ChatRole
+  content        String   @db.Text
+  toolCalls      Json?
+  inputTokens    Int?
+  outputTokens   Int?
+  createdAt      DateTime @default(now())
+
+  thread       ChatThread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+// =====================================================
+// Audit SYSCOHADA
+// =====================================================
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String   // Ex: "ENTRY_CREATED", "ENTRY_VALIDATED", "PERIOD_CLOSED"
+  targetType     String   // Ex: "JournalEntry", "AccountingPeriod"
+  targetId       String
+  metadata       Json?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action])
+  @@index([targetType, targetId])
+}
