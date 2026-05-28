@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { AccordionItem } from '@/components/ui/Accordion';
 import { formatXOF } from '@/lib/utils/currency';
 import { formatDate } from '@/lib/utils/date';
 import type { JournalEntry, JournalLine, PaginatedResponse } from '@aicompta/types';
@@ -25,38 +26,59 @@ export default function JournalPage() {
           {entries.length === 0 ? (
             <div className="p-8 text-center text-zinc-500 text-sm">Aucune écriture</div>
           ) : (
-            <div className="divide-y divide-zinc-100">
+            <div>
               {entries.map((e) => {
                 const debit = e.lines.filter((l) => l.lineType === 'DEBIT').reduce((a, l) => a + parseFloat(l.amountXof), 0);
                 return (
-                  <div key={e.id} className="p-4">
-                    <div className="flex justify-between items-baseline mb-2">
-                      <div>
-                        <span className="font-semibold">{e.reference}</span>
-                        <span className="ml-2 text-xs uppercase bg-zinc-100 px-1.5 py-0.5 rounded">{e.journal}</span>
-                        {e.isReversal && <span className="ml-2 text-xs text-orange-600">Contre-passation</span>}
+                  <AccordionItem
+                    key={e.id}
+                    title={
+                      <div className="flex justify-between items-baseline w-full">
+                        <div>
+                          <span className="font-semibold">{e.reference}</span>
+                          <span className="ml-2 text-xs uppercase bg-zinc-100 px-1.5 py-0.5 rounded">{e.journal}</span>
+                          {e.isReversal && <span className="ml-2 text-xs text-orange-600">Contre-passation</span>}
+                          <span className="ml-3 text-sm text-zinc-600">{e.description}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-zinc-500">{formatDate(e.date)}</span>
+                          <span className="text-sm font-medium">{formatXOF(debit)}</span>
+                        </div>
                       </div>
-                      <div className="text-sm text-zinc-500">{formatDate(e.date)}</div>
-                    </div>
-                    <div className="text-sm text-zinc-600 mb-2">{e.description}</div>
-                    <table className="w-full text-xs">
+                    }
+                  >
+                    <table className="w-full text-sm mt-2">
+                      <thead>
+                        <tr className="border-b border-zinc-200 text-xs text-zinc-500">
+                          <th className="py-2 text-left">Compte</th>
+                          <th className="py-2 text-left">Libellé</th>
+                          <th className="py-2 text-right">Débit</th>
+                          <th className="py-2 text-right">Crédit</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {e.lines.map((l) => (
-                          <tr key={l.id}>
-                            <td className="py-0.5 text-zinc-500 w-20">{l.accountCode}</td>
-                            <td className="py-0.5">{l.accountLabel}</td>
-                            <td className="py-0.5 text-right tabular-nums w-32">
-                              {l.lineType === 'DEBIT' ? formatXOF(l.amountXof) : ''}
+                          <tr key={l.id} className="border-b border-zinc-100">
+                            <td className="py-2 text-zinc-500">{l.accountCode}</td>
+                            <td className="py-2">{l.accountLabel}</td>
+                            <td className="py-2 text-right tabular-nums">
+                              {l.lineType === 'DEBIT' ? formatXOF(l.amountXof) : '—'}
                             </td>
-                            <td className="py-0.5 text-right tabular-nums w-32">
-                              {l.lineType === 'CREDIT' ? formatXOF(l.amountXof) : ''}
+                            <td className="py-2 text-right tabular-nums">
+                              {l.lineType === 'CREDIT' ? formatXOF(l.amountXof) : '—'}
                             </td>
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot>
+                        <tr className="font-medium">
+                          <td colSpan={2} className="py-2 text-right">Total :</td>
+                          <td className="py-2 text-right tabular-nums">{formatXOF(debit)}</td>
+                          <td className="py-2 text-right tabular-nums">{formatXOF(debit)}</td>
+                        </tr>
+                      </tfoot>
                     </table>
-                    <div className="text-xs text-right text-zinc-500 mt-1">Total : {formatXOF(debit)}</div>
-                  </div>
+                  </AccordionItem>
                 );
               })}
             </div>
